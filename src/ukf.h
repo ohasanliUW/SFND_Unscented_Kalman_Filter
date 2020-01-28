@@ -96,7 +96,6 @@ class UKF {
   // Sigma point spreading parameter
   double lambda_;
 
- private:
   enum StateVariable {
       PX = 0,
       PY,
@@ -106,10 +105,24 @@ class UKF {
       NU_A,
       NU_YAWDD,
   };
-  void GenerateSigmaPoints();
-  void AugmentedSigmaPoints(Eigen::MatrixXd& Xsig_aug_out);
-  void SigmaPointPrediction(const Eigen::MatrixXd& Xsig_aug, Eigen::MatrixXd& Xsig_out, double delta_t);
-  void PredictMeanAndCovariance(); 
+
+#define NORMALIZE_ANGLE(x)                                  \
+  do {                                                      \
+      std::cerr << "1. NORMALIZING " << (x) << std::endl;   \
+      while ((x) > M_PI) (x) -= 2. * M_PI;                  \
+      std::cerr << "2. NORMALIZING " << (x) << std::endl;   \
+      while ((x) < -M_PI) (x) += 2. * M_PI;                 \
+  } while(0)                                                \
+
+
+#define SECOND_IN_US 1e6
+#define DELTA_T(pkg, t0) (static_cast<double>((pkg).timestamp_ - (t0)) / (SECOND_IN_US))
+
+  Eigen::MatrixXd AugmentedSigmaPoints();
+  void SigmaPointPrediction(const Eigen::MatrixXd& Xsig_aug, double delta_t);
+  std::tuple<Eigen::VectorXd, Eigen::MatrixXd> PredictMeanAndCovariance(); 
+  std::tuple<Eigen::VectorXd, Eigen::MatrixXd> PredictRadarMeasurement(const Eigen::MatrixXd& Zsig);
+  Eigen::MatrixXd SigmaPoints2MeasurementSpace();
 };
 
 #endif  // UKF_H
