@@ -57,6 +57,9 @@ class UKF {
   // state covariance matrix
   Eigen::MatrixXd P_;
 
+  // Noise covariance matrix
+  Eigen::MatrixXd Q_;
+
   // predicted sigma points matrix
   Eigen::MatrixXd Xsig_pred_;
 
@@ -112,6 +115,13 @@ class UKF {
       while ((x) > M_PI) (x) -= 2. * M_PI;                  \
       std::cerr << "2. NORMALIZING " << (x) << std::endl;   \
       while ((x) < -M_PI) (x) += 2. * M_PI;                 \
+  } while(0)                                                \
+
+#define NORMALIZE_ANGLE_PERF(x)                             \
+  do {                                                      \
+    (x) = std::fmod((x) + M_PI, 2. * M_PI);                 \
+    if ((x) < 0) (x) += 2. * M_PI;                          \
+    (x) = (x) - M_PI;                                       \
   } while(0)                                                \
 
 

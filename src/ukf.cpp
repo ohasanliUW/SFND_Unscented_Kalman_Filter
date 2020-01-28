@@ -70,6 +70,10 @@ UKF::UKF() {
     weights_ = Eigen::VectorXd(2 * n_aug_ + 1);
     weights_.setConstant(0.5 / (n_aug_ +  lambda_));
     weights_(0) = lambda_ / (lambda_ + n_aug_);
+
+    Q_ = Eigen::MatrixXd::Zero(2,2);
+    Q_(0, 0) = std_a_ * std_a_;
+    Q_(1, 1) = std_yawdd_ * std_yawdd_;
 }
 
 UKF::~UKF() {}
@@ -168,11 +172,11 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
     for (int i = 0; i < Xsig_pred_.cols(); ++i) {
         // residual
         VectorXd z_diff = Zsig.col(i) - z_pred;
-        NORMALIZE_ANGLE(z_diff(1));
+        NORMALIZE_ANGLE_PERF(z_diff(1));
 
         // state difference
         VectorXd x_diff = Xsig_pred_.col(i) - x_;
-        NORMALIZE_ANGLE(x_diff(3));
+        NORMALIZE_ANGLE_PERF(x_diff(3));
 
         Tc = Tc + weights_(i) * x_diff * z_diff.transpose();
     }
@@ -182,7 +186,7 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
 
     // residual
     VectorXd z_diff = meas_package.raw_measurements_ - z_pred;
-    NORMALIZE_ANGLE(z_diff(1));
+    NORMALIZE_ANGLE_PERF(z_diff(1));
 
     x_ += K * z_diff;
     P_ -= K * S * K.transpose();
@@ -195,12 +199,9 @@ UKF::AugmentedSigmaPoints() {
     Eigen::MatrixXd P_aug    = Eigen::MatrixXd::Zero(n_aug_, n_aug_);
 
     x_aug.head(n_x_) = x_;
-    //x_aug(NU_A) = 0;
-    //x_aug(NU_YAWDD) = 0;
 
     P_aug.topLeftCorner(5,5) = P_;
-    P_aug(5,5) = std_a_ * std_a_;
-    P_aug(6,6) = std_yawdd_ * std_yawdd_;
+    P_aug.bottomRightCorner(2, 2) = Q_;
 
     // Create square root matrix of P_aug
     Eigen::MatrixXd L = P_aug.llt().matrixL();
@@ -268,7 +269,7 @@ UKF::PredictMeanAndCovariance()
         VectorXd x_diff = Xsig_pred_.col(i) - x;
 
         // angle normalization
-        NORMALIZE_ANGLE(x_diff(3));
+        NORMALIZE_ANGLE_PERF(x_diff(3));
 
         P += weights_(i) * x_diff * x_diff.transpose();
     }
@@ -293,12 +294,12 @@ UKF::PredictRadarMeasurement(const Eigen::MatrixXd& Zsig)
         z_pred += weights_(i) * Zsig.col(i);
     }
 
-    for (int i = 0; i < S.cols(); ++i) {
+    for (int i = 0; i < Zsig.cols(); ++i) {
         // residual
         VectorXd z_diff = Zsig.col(i) - z_pred;
 
         // normalize angle
-        NORMALIZE_ANGLE(z_diff(1));
+        NORMALIZE_ANGLE_PERF(z_diff(1));
 
         S = S + weights_(i) * z_diff * z_diff.transpose();
     }
