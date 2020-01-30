@@ -7,11 +7,11 @@ In this project you will implement an Unscented Kalman Filter to estimate the st
 
 The main program can be built and ran by doing the following from the project top directory.
 
-1. mkdir build
-2. cd build
-3. cmake ..
-4. make
-5. ./ukf_highway
+1. `mkdir build`
+2. `cd build`
+3. `cmake ..`
+4. `make ukf_highway`
+5. `./src/ukf_highway`
 
 Note that the programs that need to be written to accomplish the project are src/ukf.cpp, and src/ukf.h
 
@@ -44,22 +44,12 @@ The red spheres above cars represent the (x,y) lidar detection and the purple li
 ## Basic Build Instructions
 
 1. Clone this repo.
+	`git clone --recurse-submodules -j8 https://github.com/ohasanliUW/SFND_Unscented_Kalman_Filter.git`
 2. Make a build directory: `mkdir build && cd build`
 3. Compile: `cmake .. && make`
-4. Run it: `./ukf_highway`
+4. Run it: `./src/ukf_highway`
+5. Run tests: `./tests/test`
 
-## Editor Settings
-
-We've purposefully kept editor configuration files out of this repo in order to
-keep it as simple and environment agnostic as possible. However, we recommend
-using the following settings:
-
-* indent using spaces
-* set tab width to 2 spaces (keeps the matrices in source code aligned)
-
-## Code Style
-
-Please stick to [Google's C++ style guide](https://google.github.io/styleguide/cppguide.html) as much as possible.
 
 ## Generating Additional Data
 

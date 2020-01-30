@@ -3,6 +3,14 @@
 #include "../src/Eigen/Dense"
 #include "../src/ukf.h"
 #include <iostream>
+#include <chrono>
+
+#define TIMER_START (start = std::chrono::high_resolution_clock::now())
+
+#define TIMER_END   (end   = std::chrono::high_resolution_clock::now())
+
+#define TIMER_REPORT \
+    (std::cerr << "AugmentedSigmaPoints took " << std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count() << " nanoseconds"<< std::endl)
 
 class UKFTest : public ::testing::Test, public UKF {
   protected:
@@ -101,23 +109,34 @@ class UKFTest : public ::testing::Test, public UKF {
     Eigen::VectorXd z_expected;
     Eigen::MatrixXd S_expected;
     MeasurementPackage mp;
+
+    std::chrono::high_resolution_clock::time_point start, end;
 };
 
 
 TEST_F(UKFTest, AugmentedSigmaPoints) {
+    TIMER_START;
     Eigen::MatrixXd sig = AugmentedSigmaPoints();
+    TIMER_END;
+    TIMER_REPORT;
 
     EXPECT_TRUE(sig.isApprox(Xsig_aug_expected, 0.000001));
 }
 
 TEST_F(UKFTest, SigmaPointPrediction) {
+    TIMER_START;
     SigmaPointPrediction(Xsig_aug_expected, 0.1);
+    TIMER_END;
+    TIMER_REPORT;
 
     EXPECT_TRUE(Xsig_pred_.isApprox(Xsig_pred_expected, 0.000001));
 }
 
 TEST_F(UKFTest, PredictMeanAndCovariance) {
+    TIMER_START;
     auto [x, P] = PredictMeanAndCovariance();
+    TIMER_END;
+    TIMER_REPORT;
 
     EXPECT_TRUE(x.isApprox(x_expected, 0.00001));
     EXPECT_TRUE(P.isApprox(P_expected, 0.00001));
@@ -137,8 +156,11 @@ TEST_F(UKFTest, Prediction) {
 
 TEST_F(UKFTest, PredictRadarMeasurement) {
 
+    TIMER_START;
     auto Zsig = SigmaPoints2MeasurementSpace();
     auto [z, S] = PredictRadarMeasurement(Zsig);
+    TIMER_END;
+    TIMER_REPORT;
 
     EXPECT_TRUE(z.isApprox(z_expected, 0.00001));
     EXPECT_TRUE(S.isApprox(S_expected, 0.00001));

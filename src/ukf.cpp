@@ -306,11 +306,11 @@ UKF::AugmentedSigmaPoints() {
     // Create square root matrix of P_aug
     Eigen::MatrixXd L = P_aug.llt().matrixL();
 
+    double sqrt_lambda_n_aug = sqrt(lambda_ + n_aug_);
+
     Xsig_aug.col(0)  = x_aug;
-    for (int i = 0; i < n_aug_; ++i) {
-        Xsig_aug.col(i + 1)          = x_aug + sqrt(lambda_ + n_aug_) * L.col(i);
-        Xsig_aug.col(i + 1 + n_aug_) = x_aug - sqrt(lambda_ + n_aug_) * L.col(i);
-    }
+    Xsig_aug.block(0, 1, n_aug_, n_aug_)          = ( sqrt_lambda_n_aug * L).colwise() + x_aug;
+    Xsig_aug.block(0, n_aug_ + 1, n_aug_, n_aug_) = (-sqrt_lambda_n_aug * L).colwise() + x_aug;
 
     return Xsig_aug;
 }
