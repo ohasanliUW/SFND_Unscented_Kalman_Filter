@@ -11,7 +11,7 @@ using Eigen::VectorXd;
  */
 UKF::UKF() {
     // if this is false, laser measurements will be ignored (except during init)
-    use_laser_ = false;
+    use_laser_ = true;
 
     // if this is false, radar measurements will be ignored (except during init)
     use_radar_ = true;
@@ -28,7 +28,7 @@ UKF::UKF() {
 
     // Process noise standard deviation yaw acceleration in rad/s^2
     // original was 30
-    std_yawdd_ = 0.2;
+    std_yawdd_ = 0.3;
 
    /**
     * DO NOT MODIFY measurement noise values below.
@@ -66,6 +66,9 @@ UKF::UKF() {
 
     lambda_ = 3 - n_aug_;
 
+    NIS_radar_ = NAN;
+    NIS_laser_ = NAN;
+
     // Weights are always the same for given lambda_
     weights_ = Eigen::VectorXd(2 * n_aug_ + 1);
     weights_.setConstant(0.5 / (n_aug_ +  lambda_));
@@ -74,6 +77,14 @@ UKF::UKF() {
     Q_ = Eigen::MatrixXd::Zero(2,2);
     Q_(0, 0) = std_a_ * std_a_;
     Q_(1, 1) = std_yawdd_ * std_yawdd_;
+
+    H_ = Eigen::MatrixXd::Zero(2, 5);
+    H_.topLeftCorner(2, 2) = Eigen::MatrixXd::Identity(2, 2);
+    std::cout << H_ << std::endl;
+
+    R_ = Eigen::MatrixXd(2, 2);
+    R_ << std_laspx_ * std_laspx_, 0,
+          0, std_laspy_ * std_laspy_;
 }
 
 UKF::~UKF() {}
@@ -83,6 +94,8 @@ firstMeasurement(MeasurementPackage meas_package, uint8_t n_x)
 {
     Eigen::VectorXd x = Eigen::VectorXd(n_x);
     Eigen::MatrixXd P = Eigen::MatrixXd::Identity(n_x, n_x);
+    P(0, 0) = 0.15;
+    P(1, 1) = 0.15;
 
     if (MeasurementPackage::LASER == meas_package.sensor_type_) {
         x << meas_package.raw_measurements_(0), // px
@@ -117,18 +130,19 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
         std::tie(x_, P_) = firstMeasurement(meas_package, n_x_);
         is_initialized_ = true;
         time_us_ = meas_package.timestamp_;
-    } else if (MeasurementPackage::LASER == meas_package.sensor_type_ && use_laser_) {
-
-    } else if (MeasurementPackage::RADAR == meas_package.sensor_type_ && use_radar_) {
-
-        // 1. Predict
-        // calculate delta_t in seconds
-        std::cerr << "PACKAGE AT " << meas_package.timestamp_ << ", last at " << time_us_ << std::endl;
-        Prediction(DELTA_T(meas_package, time_us_));
-        // 2. Update
-        UpdateRadar(meas_package);
-        time_us_ = meas_package.timestamp_;
+        return;
     }
+
+    // Prediction step same for both Lidar and Radar measurements
+    Prediction(DELTA_T(meas_package, time_us_));
+
+    if (MeasurementPackage::LASER == meas_package.sensor_type_ && use_laser_) {
+        UpdateLidar(meas_package);
+    } else if (MeasurementPackage::RADAR == meas_package.sensor_type_ && use_radar_) {
+        UpdateRadar(meas_package);
+    }
+
+    time_us_ = meas_package.timestamp_;
 }
 
 void UKF::Prediction(double delta_t) {
@@ -145,7 +159,6 @@ void UKF::Prediction(double delta_t) {
 
     // Use results of sigma point prediction to compute mean and covariance
     std::tie(x_, P_) = PredictMeanAndCovariance();
-    std::cerr << "DONE PREDICTION" << std::endl;
 }
 
 void UKF::UpdateLidar(MeasurementPackage meas_package) {
@@ -155,6 +168,21 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
    * covariance, P_.
    * You can also calculate the lidar NIS, if desired.
    */
+
+    Eigen::VectorXd z_pred = H_ * x_;
+    Eigen::VectorXd y      = meas_package.raw_measurements_ - z_pred;
+    Eigen::MatrixXd Ht     = H_.transpose();
+    Eigen::MatrixXd S      = H_ * P_ * Ht + R_;
+    Eigen::MatrixXd Si     = S.inverse();
+    Eigen::MatrixXd K      = P_ * Ht * Si;
+
+    // new estimate
+    x_ = x_ + (K * y);
+    long x_size = x_.size();
+    Eigen::MatrixXd I = MatrixXd::Identity(x_size, x_size);
+    P_ = (I - K * H_) * P_;
+
+    NIS_laser_ = y.transpose() * Si * y;
 }
 
 void UKF::UpdateRadar(MeasurementPackage meas_package) {
@@ -166,7 +194,6 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
    */
     auto Zsig        = SigmaPoints2MeasurementSpace();
     auto [z_pred, S] = PredictRadarMeasurement(Zsig);
-
     Eigen::MatrixXd Tc = Eigen::MatrixXd::Zero(n_x_, z_pred.rows());
 
     for (int i = 0; i < Xsig_pred_.cols(); ++i) {
@@ -190,6 +217,10 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
 
     x_ += K * z_diff;
     P_ -= K * S * K.transpose();
+
+    // Compute NIS
+    NIS_radar_ = z_diff.transpose() * S.inverse() * z_diff;
+    //std::cerr << NIS_radar_ << std::endl;
 }
 
 Eigen::MatrixXd
@@ -224,13 +255,13 @@ void UKF::SigmaPointPrediction(const Eigen::MatrixXd& Xsig_aug, double delta_t) 
     for (uint8_t i = 0; i < Xsig_pred_.cols(); ++i) {
         Eigen::VectorXd colm = Xsig_aug.col(i);
 
-        auto yawd = colm(UKF::YAWD);
-        auto yaw  = colm(UKF::YAW);
-        auto v    = colm(UKF::V);
+        double yawd = colm(UKF::YAWD);
+        double yaw  = colm(UKF::YAW);
+        double v    = colm(UKF::V);
         // avoid division by zero
         if (std::fabs(yawd) > std::numeric_limits<double>::epsilon()) {
-            deltaX(PX) = v / yawd * (std::sin(yaw + yawd * delta_t) - std::sin(yaw));
-            deltaX(PY) = v / yawd * (std::cos(yaw) - std::cos(yaw + yawd * delta_t));
+            deltaX(PX) = (v / yawd) * (std::sin(yaw + yawd * delta_t) - std::sin(yaw));
+            deltaX(PY) = (v / yawd) * (std::cos(yaw) - std::cos(yaw + yawd * delta_t));
         } else {
             deltaX(PX) = v * delta_t * std::cos(yaw);
             deltaX(PY) = v * delta_t * std::sin(yaw);
@@ -240,8 +271,8 @@ void UKF::SigmaPointPrediction(const Eigen::MatrixXd& Xsig_aug, double delta_t) 
         deltaX(YAW)  = yawd * delta_t;
         deltaX(YAWD) = 0;
 
-        auto nu_a = colm(UKF::NU_A);
-        auto nu_yawdd = colm(UKF::NU_YAWDD);
+        double nu_a = colm(UKF::NU_A);
+        double nu_yawdd = colm(UKF::NU_YAWDD);
         noise(PX)   = 0.5 * nu_a * delta_t * delta_t * std::cos(yaw);
         noise(PY)   = 0.5 * nu_a * delta_t * delta_t * std::sin(yaw);
         noise(V)    = nu_a * delta_t;
@@ -251,6 +282,7 @@ void UKF::SigmaPointPrediction(const Eigen::MatrixXd& Xsig_aug, double delta_t) 
         // predicted sigma point is colm + deltaX + noise;
         Xsig_pred_.col(i) = colm.topRows(5) + deltaX + noise;
     }
+
 }
 
 std::tuple<Eigen::VectorXd, Eigen::MatrixXd>
@@ -326,13 +358,13 @@ UKF::SigmaPoints2MeasurementSpace()
         double yaw = Xsig_pred_(UKF::YAW, i);
 
         // range r
-        auto r = std::sqrt(p_x * p_x + p_y * p_y);
+        double r = std::sqrt(p_x * p_x + p_y * p_y);
 
         // angle phi
-        auto phi = std::atan2(p_y, p_x);
+        double phi = std::atan2(p_y, p_x);
 
         // r_dot
-        auto r_dot = (p_x * std::cos(yaw) * v + p_y * std::sin(yaw) * v) / r;
+        double r_dot = (p_x * std::cos(yaw) * v + p_y * std::sin(yaw) * v) / r;
 
         Zsig(0, i) = r; Zsig(1, i) = phi; Zsig(2, i) = r_dot;
     }

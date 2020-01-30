@@ -60,6 +60,12 @@ class UKF {
   // Noise covariance matrix
   Eigen::MatrixXd Q_;
 
+  // measurement matrix
+  Eigen::MatrixXd H_;
+
+  // measurement covariance matrix
+  Eigen::MatrixXd R_;
+
   // predicted sigma points matrix
   Eigen::MatrixXd Xsig_pred_;
 
@@ -86,6 +92,12 @@ class UKF {
 
   // Radar measurement noise standard deviation radius change in m/s
   double std_radrd_ ;
+
+  // NIS for Radar
+  double NIS_radar_;
+
+  // NIS for Laser
+  double NIS_laser_;
 
   // Weights of sigma points
   Eigen::VectorXd weights_;
@@ -127,7 +139,7 @@ class UKF {
 
 #define SECOND_IN_US 1e6
 #define DELTA_T(pkg, t0) (static_cast<double>((pkg).timestamp_ - (t0)) / (SECOND_IN_US))
-
+  
   Eigen::MatrixXd AugmentedSigmaPoints();
   void SigmaPointPrediction(const Eigen::MatrixXd& Xsig_aug, double delta_t);
   std::tuple<Eigen::VectorXd, Eigen::MatrixXd> PredictMeanAndCovariance(); 
