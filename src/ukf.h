@@ -3,6 +3,8 @@
 
 #include "Eigen/Dense"
 #include "measurement_package.h"
+#include <fstream>
+#include <memory>
 
 class UKF {
  public:
@@ -121,14 +123,18 @@ class UKF {
       NU_YAWDD,
   };
 
+  // file stream objects to print NIS values to a file for analysis
+  //std::shared_ptr<std::ofstream> NIS_radar_f;
+  //std::shared_ptr<std::ofstream> NIS_laser_f;
+
+  // A very bad angle normalization procedure provided in course tutorials
 #define NORMALIZE_ANGLE(x)                                  \
   do {                                                      \
-      std::cerr << "1. NORMALIZING " << (x) << std::endl;   \
       while ((x) > M_PI) (x) -= 2. * M_PI;                  \
-      std::cerr << "2. NORMALIZING " << (x) << std::endl;   \
       while ((x) < -M_PI) (x) += 2. * M_PI;                 \
   } while(0)                                                \
 
+  // High performance angle normalization based on simple mathematics
 #define NORMALIZE_ANGLE_PERF(x)                             \
   do {                                                      \
     (x) = std::fmod((x) + M_PI, 2. * M_PI);                 \
@@ -136,15 +142,30 @@ class UKF {
     (x) = (x) - M_PI;                                       \
   } while(0)                                                \
 
-
+// Number of microseconds in a second
 #define SECOND_IN_US 1e6
+
+// Macro to calculate time difference between last and current measurement
 #define DELTA_T(pkg, t0) (static_cast<double>((pkg).timestamp_ - (t0)) / (SECOND_IN_US))
   
+ protected:
+  // Method to generate augmented sigma points
   Eigen::MatrixXd AugmentedSigmaPoints();
+
+  // Method to predict the augmented sigma points
   void SigmaPointPrediction(const Eigen::MatrixXd& Xsig_aug, double delta_t);
+
+  // Method to predict new mean and state covariance
   std::tuple<Eigen::VectorXd, Eigen::MatrixXd> PredictMeanAndCovariance(); 
+
+  // Method to predict radar measurement in measurement space
   std::tuple<Eigen::VectorXd, Eigen::MatrixXd> PredictRadarMeasurement(const Eigen::MatrixXd& Zsig);
+
+  // Method to move sigma points into measurement space
   Eigen::MatrixXd SigmaPoints2MeasurementSpace();
+
+private:
+  std::tuple<Eigen::VectorXd, Eigen::MatrixXd> firstMeasurement(MeasurementPackage meas_package);
 };
 
 #endif  // UKF_H

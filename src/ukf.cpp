@@ -24,11 +24,11 @@ UKF::UKF() {
 
     // Process noise standard deviation longitudinal acceleration in m/s^2
     // original was 30
-    std_a_ = 0.2;
+    std_a_ = 6;
 
     // Process noise standard deviation yaw acceleration in rad/s^2
     // original was 30
-    std_yawdd_ = 0.3;
+    std_yawdd_ = 1.2;
 
    /**
     * DO NOT MODIFY measurement noise values below.
@@ -69,33 +69,70 @@ UKF::UKF() {
     NIS_radar_ = NAN;
     NIS_laser_ = NAN;
 
-    // Weights are always the same for given lambda_
+    /*
+     * Weights are always the same for given lambda_
+     */
     weights_ = Eigen::VectorXd(2 * n_aug_ + 1);
     weights_.setConstant(0.5 / (n_aug_ +  lambda_));
     weights_(0) = lambda_ / (lambda_ + n_aug_);
 
+    /*
+     * Process Noise Covariance Matrix is constant since
+     * std_a_ and std_yawdd_ are constant in our model
+     */
     Q_ = Eigen::MatrixXd::Zero(2,2);
     Q_(0, 0) = std_a_ * std_a_;
     Q_(1, 1) = std_yawdd_ * std_yawdd_;
 
+    // H projects measurement from 5 dimensions to 2 dimensions since Lidar
+    // only measure px and py. Hence, we have following matrix for H
     H_ = Eigen::MatrixXd::Zero(2, 5);
     H_.topLeftCorner(2, 2) = Eigen::MatrixXd::Identity(2, 2);
-    std::cout << H_ << std::endl;
 
+    /*
+     * Measurements come with a noise and Measurement Noise Covariance Matrix
+     * represents how px and py are affected. Since px and py are independent of
+     * each other, sigma(px,py) <-- 0 and sigma(py, px) <-- 0
+     * sigma(px,px) and sigma(py,py) depend on measurement noise of the sensor
+     * which is usually provided by the manufacturer.
+     */
     R_ = Eigen::MatrixXd(2, 2);
     R_ << std_laspx_ * std_laspx_, 0,
           0, std_laspy_ * std_laspy_;
+
+
+    //NIS_radar_f = std::make_shared<std::ofstream>(std::ofstream("Radar.txt"));
+    //NIS_laser_f = std::make_shared<std::ofstream>(std::ofstream("Lidar.txt"));
 }
 
-UKF::~UKF() {}
+UKF::~UKF() {
+}
 
-static std::tuple<Eigen::VectorXd, Eigen::MatrixXd>
-firstMeasurement(MeasurementPackage meas_package, uint8_t n_x)
+/*
+ * firstMeasurement:
+ *  @ meas_package (in) -- measurement package including raw sensor data
+ *  @ return:
+ *      mean and covariance matrices x and P
+ *
+ * For first measurement, we assume following:
+ *  - Instead of Identity matrix for P_, we use sensor measurement noise
+ *    values.
+ *  - Initial value of x_ depends on whether first measurement is from Lidar or Radar
+ *    Radar data gives us range, angle and the range rate. We can calculate px, py and v
+ *    using this data and keep yaw and yawd 0 since cannot measure them.
+ *    
+ *    Lidar data gives us px and py directly. Hence, we simply pass them to x_
+ *    and keep everything else 0.
+ */
+std::tuple<Eigen::VectorXd, Eigen::MatrixXd>
+UKF::firstMeasurement(MeasurementPackage meas_package)
 {
-    Eigen::VectorXd x = Eigen::VectorXd(n_x);
-    Eigen::MatrixXd P = Eigen::MatrixXd::Identity(n_x, n_x);
-    P(0, 0) = 0.15;
-    P(1, 1) = 0.15;
+    Eigen::VectorXd x = Eigen::VectorXd(n_x_);
+    Eigen::MatrixXd P = Eigen::MatrixXd::Identity(n_x_, n_x_);
+    P(0, 0) = std_laspx_ * std_laspx_;
+    P(1, 1) = std_laspy_ * std_laspy_;
+    P(3, 3) = std_radphi_ * std_radphi_;
+    P(4, 4) = std_radrd_ * std_radrd_;
 
     if (MeasurementPackage::LASER == meas_package.sensor_type_) {
         x << meas_package.raw_measurements_(0), // px
@@ -120,14 +157,22 @@ firstMeasurement(MeasurementPackage meas_package, uint8_t n_x)
     return std::make_tuple(x, P);
 }
 
+/*
+ * ProcessMeasurement:
+ * @ meas_package (in) -- measurement package including raw sensor data
+ * @ side effects:
+ *      updates x_ and P_
+ *
+ * If received measurement is first measurement ever for the object being tracked
+ * then initialize x_ and P_ for that object via firstMeasurement();
+ *
+ * Otherwise, predict the mean and state covariance matrices based on the delta_t
+ * Then, Update() the state based on the received sensor data
+ */
 void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
-  /**
-   * TODO: Complete this function! Make sure you switch between lidar and radar
-   * measurements.
-   */
     if (!is_initialized_) {
         // First measurement
-        std::tie(x_, P_) = firstMeasurement(meas_package, n_x_);
+        std::tie(x_, P_) = firstMeasurement(meas_package);
         is_initialized_ = true;
         time_us_ = meas_package.timestamp_;
         return;
@@ -136,6 +181,7 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
     // Prediction step same for both Lidar and Radar measurements
     Prediction(DELTA_T(meas_package, time_us_));
 
+    // Update state
     if (MeasurementPackage::LASER == meas_package.sensor_type_ && use_laser_) {
         UpdateLidar(meas_package);
     } else if (MeasurementPackage::RADAR == meas_package.sensor_type_ && use_radar_) {
@@ -145,6 +191,12 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
     time_us_ = meas_package.timestamp_;
 }
 
+/*
+ * Prediction:
+ * @ delta_t (in) -- time difference between current and previous measurements
+ * @ Side effects:
+ *      Updates x_ and P_
+ */
 void UKF::Prediction(double delta_t) {
   /**
    * Estimate the object's location. 
@@ -161,9 +213,15 @@ void UKF::Prediction(double delta_t) {
     std::tie(x_, P_) = PredictMeanAndCovariance();
 }
 
+/*
+ * UpdateLidar:
+ * @ meas_package (in) -- measurement package including raw sensor data
+ * @ Side effects:
+ *  Updates x_, P_ and NIS_laser_ values
+ */
 void UKF::UpdateLidar(MeasurementPackage meas_package) {
   /**
-   * TODO: Complete this function! Use lidar data to update the belief 
+   * Use lidar data to update the belief 
    * about the object's position. Modify the state vector, x_, and 
    * covariance, P_.
    * You can also calculate the lidar NIS, if desired.
@@ -183,11 +241,18 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
     P_ = (I - K * H_) * P_;
 
     NIS_laser_ = y.transpose() * Si * y;
+    //*NIS_laser_f << NIS_laser_ << std::endl;
 }
 
+/*
+ * UpdateRadar:
+ * @ meas_package (in) -- measurement package including raw sensor data
+ * @ Side effects:
+ *  Updates x_, P_ and NIS_laser_ values
+ */
 void UKF::UpdateRadar(MeasurementPackage meas_package) {
   /**
-   * TODO: Complete this function! Use radar data to update the belief 
+   * Use radar data to update the belief 
    * about the object's position. Modify the state vector, x_, and 
    * covariance, P_.
    * You can also calculate the radar NIS, if desired.
@@ -220,9 +285,13 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
 
     // Compute NIS
     NIS_radar_ = z_diff.transpose() * S.inverse() * z_diff;
-    //std::cerr << NIS_radar_ << std::endl;
+    //*NIS_radar_f << NIS_radar_ << std::endl;
 }
 
+/*
+ * AugmentedSigmaPoints:
+ * Generates augmented sigma points
+ */
 Eigen::MatrixXd
 UKF::AugmentedSigmaPoints() {
     Eigen::MatrixXd Xsig_aug = Eigen::MatrixXd(n_aug_, 2 * n_aug_ + 1);
@@ -246,6 +315,13 @@ UKF::AugmentedSigmaPoints() {
     return Xsig_aug;
 }
 
+/*
+ * SigmaPointPrediction:
+ * @ Xsig_aug -- augmented sigma points that were generated by AugmentedSigmaPoints()
+ * @ delta_t  -- difference in time since last measurement
+ * @ Side Effects:
+ *  Predicted sigma points are stored into Xsig_pred_
+ */
 void UKF::SigmaPointPrediction(const Eigen::MatrixXd& Xsig_aug, double delta_t) {
     // Vector to predict new X state
     auto deltaX = Eigen::VectorXd(n_x_);
@@ -285,6 +361,10 @@ void UKF::SigmaPointPrediction(const Eigen::MatrixXd& Xsig_aug, double delta_t) 
 
 }
 
+/*
+ * PredictMeanAndCovariance:
+ * Predicts new meana and state covariance and returns them both
+ */
 std::tuple<Eigen::VectorXd, Eigen::MatrixXd>
 UKF::PredictMeanAndCovariance()
 {
@@ -309,6 +389,12 @@ UKF::PredictMeanAndCovariance()
     return std::make_tuple(x, P);
 }
 
+/*
+ * PredictRadarMeasurement:
+ * @ Zsig (in) -- Predicted sigma points in measurement space
+ * @ return:
+ *  predicted mean and measurement variance in measurement space
+ */
 std::tuple<Eigen::VectorXd, Eigen::MatrixXd>
 UKF::PredictRadarMeasurement(const Eigen::MatrixXd& Zsig)
 {
@@ -346,6 +432,11 @@ UKF::PredictRadarMeasurement(const Eigen::MatrixXd& Zsig)
     return std::make_tuple(z_pred, S);
 }
 
+/*
+ * SigmaPoints2MeasurementSpace:
+ * @ return:
+ *  Predicted sigma points in measurement space
+ */
 Eigen::MatrixXd
 UKF::SigmaPoints2MeasurementSpace()
 {

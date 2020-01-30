@@ -4,33 +4,38 @@
 #include "../src/ukf.h"
 #include <iostream>
 
-class UKFTest : public ::testing::Test {
+class UKFTest : public ::testing::Test, public UKF {
   protected:
     void SetUp() override {
-        ukf.std_radr_ = 0.3;
-        ukf.std_radrd_ = 0.1;
-        ukf.std_radphi_ = 0.0175;
+        std_radr_ = 0.3;
+        std_radrd_ = 0.1;
+        std_radphi_ = 0.0175;
+        std_a_ = 0.2;
+        std_yawdd_ = 0.2;
+        Q_ = Eigen::MatrixXd::Zero(2,2);
+        Q_(0, 0) = std_a_ * std_a_;
+        Q_(1, 1) = std_yawdd_ * std_yawdd_;
 
-        ukf.x_ = Eigen::VectorXd(ukf.n_x_);
-        ukf.x_ << 5.7441,
+        x_ = Eigen::VectorXd(n_x_);
+        x_ << 5.7441,
                   1.3800,
                   2.2049,
                   0.5015,
                   0.3528;
 
-        ukf.P_ = Eigen::MatrixXd(ukf.n_x_, ukf.n_x_);
-        ukf.P_ << 0.0043,   -0.0013,    0.0030,   -0.0022,   -0.0020,
+        P_ = Eigen::MatrixXd(n_x_, n_x_);
+        P_ << 0.0043,   -0.0013,    0.0030,   -0.0022,   -0.0020,
               -0.0013,    0.0077,    0.0011,    0.0071,    0.0060,
                0.0030,    0.0011,    0.0054,    0.0007,    0.0008,
               -0.0022,    0.0071,    0.0007,    0.0098,    0.0100,
               -0.0020,    0.0060,    0.0008,    0.0100,    0.0123;
 
 
-        ukf.Xsig_pred_       = Eigen::MatrixXd(ukf.n_x_, 2 * ukf.n_aug_ + 1);
-        Xsig_aug_expected    = Eigen::MatrixXd(ukf.n_aug_, 2 * ukf.n_aug_ + 1);
-        Xsig_pred_expected   = Eigen::MatrixXd(ukf.n_x_, 2 * ukf.n_aug_ + 1);
-        x_expected           = Eigen::VectorXd(ukf.n_x_);
-        P_expected           = Eigen::MatrixXd(ukf.n_x_, ukf.n_x_);
+        Xsig_pred_       = Eigen::MatrixXd(n_x_, 2 * n_aug_ + 1);
+        Xsig_aug_expected    = Eigen::MatrixXd(n_aug_, 2 * n_aug_ + 1);
+        Xsig_pred_expected   = Eigen::MatrixXd(n_x_, 2 * n_aug_ + 1);
+        x_expected           = Eigen::VectorXd(n_x_);
+        P_expected           = Eigen::MatrixXd(n_x_, n_x_);
         z_expected           = Eigen::VectorXd(3);
         S_expected           = Eigen::MatrixXd(3, 3);
         mp.raw_measurements_ = Eigen::VectorXd(3);
@@ -75,7 +80,7 @@ class UKFTest : public ::testing::Test {
             -0.000139448,  0.000617548, -0.000770652,
             0.00407016, -0.000770652,    0.0180917;
 
-        ukf.Xsig_pred_ <<
+        Xsig_pred_ <<
             5.9374,  6.0640,   5.925,  5.9436,  5.9266,  5.9374,  5.9389,  5.9374,  5.8106,  5.9457,  5.9310,  5.9465,  5.9374,  5.9359,  5.93744,
            1.48,  1.4436,   1.660,  1.4934,  1.5036,    1.48,  1.4868,    1.48,  1.5271,  1.3104,  1.4787,  1.4674,    1.48,  1.4851,    1.486,
           2.204,  2.2841,  2.2455,  2.2958,   2.204,   2.204,  2.2395,   2.204,  2.1256,  2.1642,  2.1139,   2.204,   2.204,  2.1702,   2.2049,
@@ -88,7 +93,7 @@ class UKFTest : public ::testing::Test {
                  2.0062;   // rho_dot in m/s
     }
 
-    UKF ukf;
+    //UKF ukf;
     Eigen::MatrixXd Xsig_aug_expected;
     Eigen::MatrixXd Xsig_pred_expected;
     Eigen::VectorXd x_expected;
@@ -99,20 +104,20 @@ class UKFTest : public ::testing::Test {
 };
 
 
-TEST_F(UKFTest, gen_aug_sig) {
-    Eigen::MatrixXd sig = ukf.AugmentedSigmaPoints();
+TEST_F(UKFTest, AugmentedSigmaPoints) {
+    Eigen::MatrixXd sig = AugmentedSigmaPoints();
 
     EXPECT_TRUE(sig.isApprox(Xsig_aug_expected, 0.000001));
 }
 
-TEST_F(UKFTest, sig_pred) {
-    ukf.SigmaPointPrediction(Xsig_aug_expected, 0.1);
+TEST_F(UKFTest, SigmaPointPrediction) {
+    SigmaPointPrediction(Xsig_aug_expected, 0.1);
 
-    EXPECT_TRUE(ukf.Xsig_pred_.isApprox(Xsig_pred_expected, 0.000001));
+    EXPECT_TRUE(Xsig_pred_.isApprox(Xsig_pred_expected, 0.000001));
 }
 
 TEST_F(UKFTest, PredictMeanAndCovariance) {
-    auto [x, P] = ukf.PredictMeanAndCovariance();
+    auto [x, P] = PredictMeanAndCovariance();
 
     EXPECT_TRUE(x.isApprox(x_expected, 0.00001));
     EXPECT_TRUE(P.isApprox(P_expected, 0.00001));
@@ -132,8 +137,8 @@ TEST_F(UKFTest, Prediction) {
 
 TEST_F(UKFTest, PredictRadarMeasurement) {
 
-    auto Zsig = ukf.SigmaPoints2MeasurementSpace();
-    auto [z, S] = ukf.PredictRadarMeasurement(Zsig);
+    auto Zsig = SigmaPoints2MeasurementSpace();
+    auto [z, S] = PredictRadarMeasurement(Zsig);
 
     EXPECT_TRUE(z.isApprox(z_expected, 0.00001));
     EXPECT_TRUE(S.isApprox(S_expected, 0.00001));
