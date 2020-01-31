@@ -258,7 +258,12 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
    * You can also calculate the radar NIS, if desired.
    */
     auto Zsig        = SigmaPoints2MeasurementSpace();
-    auto [z_pred, S] = PredictRadarMeasurement(Zsig);
+    //auto [z_pred, S] = PredictRadarMeasurement(Zsig);
+    // Udacity does not support c++17, so above won't work
+    Eigen::VectorXd z_pred;
+    Eigen::MatrixXd S;
+    std::tie(z_pred, S) = PredictRadarMeasurement(Zsig);
+
     Eigen::MatrixXd Tc = Eigen::MatrixXd::Zero(n_x_, z_pred.rows());
 
     for (int i = 0; i < Xsig_pred_.cols(); ++i) {
