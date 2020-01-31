@@ -44,23 +44,15 @@ The red spheres above cars represent the (x,y) lidar detection and the purple li
 ## Basic Build Instructions
 
 1. Clone this repo.
-	`git clone --recurse-submodules -j8 https://github.com/ohasanliUW/SFND_Unscented_Kalman_Filter.git`
+	`git clone https://github.com/ohasanliUW/SFND_Unscented_Kalman_Filter.git`
 2. Make a build directory: `mkdir build && cd build`
 3. Compile: `cmake .. && make`
 4. Run it: `./src/ukf_highway`
 5. Run tests: `./tests/test`
 
+## Unit Tests
+`tests` directory has been introduced for unit tests with googletest framework. During the cmake configuration, googletest code is pulled automatically.
 
-## Generating Additional Data
-
-This is optional!
-
-If you'd like to generate your own radar and lidar modify the code in `highway.h` to alter the cars. Also check out `tools.cpp` to
-change how measurements are taken, for instance lidar markers could be the (x,y) center of bounding boxes by scanning the PCD environment
-and performing clustering. This is similar to what was done in Sensor Fusion Lidar Obstacle Detection.
-
-## Project Instructions and Rubric
-
-This information is only accessible by people who are already enrolled in Sensor Fusion. 
-If you are enrolled, see the project page in the classroom
-for instructions and the project rubric.
+## NIS for Radar and Lidar
+To collect data for NIS, two file stream objects have been added to UKF class. In order to collect data reliable, only one car had been tracked. After collecting data, Microsoft Excell was used to plot the diagrams. Also, data were analysed manually to make sure 5th, 10th, 90th and 95th percentiles for both Lidar and Radar fall into expected NIS value table.
+<img src="media/NIS.png" width="500" height="500" />
